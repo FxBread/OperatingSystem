@@ -37,7 +37,6 @@ typedef struct{
     int facilitates[6];
     int command_type;
     int status;
-    int scheduler_type;
 }BookingMsg;
 
 enum Facility{
@@ -61,6 +60,41 @@ BookingMsg bookingMsgs[MAX_BOOKING]; //store all booking value
 int bookingMsgs_count = 0;
 DistributeItem distributeItems[7][24];//resource allocate for 24x7 hour
 
+
+int convert_date_to_day_index(time_t date) {
+    char *temp = ctime(&date);
+    char temp2[4];
+    int temp3;
+    strncpy(temp2, temp, 3);
+    if (strcmp(temp2, "Sun") == 0) {
+        temp3 = SUN;
+    }else if(strcmp(temp2, "Mon") == 0) {
+        temp3 = MON;
+    }else if(strcmp(temp2, "Tue") == 0) {
+        temp3 = TUE;
+    }else if(strcmp(temp2, "Wed") == 0) {
+        temp3 = WED;
+    }else if(strcmp(temp2, "Thu") == 0) {
+        temp3 = THU;
+    }else if(strcmp(temp2, "Fri") == 0) {
+        temp3 = FRI;
+    }else if(strcmp(temp2, "Sat") == 0) {
+        temp3 = SAT;
+    }
+    return temp3;
+}
+int convert_date_to_start_hour_index(char *booking_date) {
+    char temp[3];
+    int hour_index;
+    strncpy(temp, booking_date, 2);
+    hour_index = atoi(temp);
+    return hour_index;
+}
+int convert_date_to_end_hour_index(int start_hour_index,float book_time_duration) {
+    int hour_index;
+    hour_index = start_hour_index + book_time_duration;
+    return hour_index;
+}
 void input_process(){
     char command[MAX_MSG];
     char args[MAX_MSG];
@@ -225,17 +259,31 @@ void input_process(){
 
 
         if (bookingMsg.command_type==5) {
+            char *temp;
+            int status;
             if (count==1) {
-                char *temp = tokens[0];
+                temp = tokens[0];
                 printf("%s\n",temp);
             }else {
                 printf("unvalid args.\n");
                 break;
             }
+            if (strcmp(temp,"-fcfs")==0) {
+                status = FCFS;
+            }else if (strcmp(temp,"-prio")==0) {
+                status = PRIO;
+            }else if (strcmp(temp,"-opti")==0) {
+                status = OPTI;
+            }else if (strcmp(temp,"-ALL")==0) {
+                status = ALL;
+            }else {
+                printf("unvalid args.\n");
+            }
             write(main_to_scheduler[PIPE_WRITE],&bookingMsgs,sizeof(bookingMsgs)); //send message to scheduler process
+            write(main_to_scheduler[PIPE_WRITE],&temp,sizeof(temp));
             while (1) {
-                read(scheduler_to_main[PIPE_READ],&bookingMsgs,sizeof(bookingMsgs));//receive status
-                if (bookingMsgs[0].status==DONE) {
+                read(scheduler_to_main[PIPE_READ],&status,sizeof(int));//receive status
+                if (status==DONE) {
                     printf("-> [DONE]\n");
                     break;
                 }
@@ -250,18 +298,42 @@ void input_process(){
 void fcfs_process() {
     close_fcfs_unused_pipe();
 
+    while (1) {
+        BookingMsg recbookingMsgs[MAX_BOOKING]; //store all booking value
+        read(scheduler_to_fcfs[PIPE_READ],&recbookingMsgs,sizeof(recbookingMsgs));
+
+        for (int i = 0;i<MAX_BOOKING;i++) {//calculate booking duration time
+            int day_index = convert_date_to_day_index(recbookingMsgs[i].date);//sun-sat 0-6day
+            int start_hour_index = convert_date_to_start_hour_index(recbookingMsgs[i].booking_time);//time slot index 0-23
+            int end_hour_index = convert_date_to_end_hour_index(start_hour_index,recbookingMsgs[i].book_time_duration);
+            
+            if (strcmp(recbookingMsgs[i+1].member_name, "")==0) {
+                break;
+            }
+        }
+
+    }
+
+
 }
 
 void scheduler_process() {
     close_scheduler_unused_pipe();
+    int status;
+
     while(1) {
         BookingMsg recbookingMsgs[MAX_BOOKING]; //store all booking value
         read(main_to_scheduler[PIPE_READ],&recbookingMsgs,sizeof(recbookingMsgs));
+        read(main_to_scheduler[PIPE_READ],&status,sizeof(int));//receive scheduler type
+        printf("%d\n",status);
         //processing scheduler function
-        write(scheduler_to_fcfs[PIPE_WRITE],&recbookingMsgs,sizeof(recbookingMsgs));
+        if (status==FCFS) {
 
-        recbookingMsgs[0].status = DONE;
-        write(scheduler_to_main[PIPE_WRITE],&recbookingMsgs,sizeof(recbookingMsgs)); //feedback to parent
+            write(scheduler_to_fcfs[PIPE_WRITE],&recbookingMsgs,sizeof(recbookingMsgs));
+        }
+
+        status = DONE;
+        write(scheduler_to_main[PIPE_WRITE],&status,sizeof(int)); //feedback to parent
 
     }
 }
@@ -270,12 +342,12 @@ void fork_child_create() {
     if (fork() == 0 ) {
         // scheduler process
         scheduler_process();
-        exit(0);
+        // exit(0);
     }
     if (fork() == 0 ) {
         // fcfs process
         fcfs_process();
-        exit(0);
+        // exit(0);
     }
     // if (fork() == 0 ) {
     //     // priority process
