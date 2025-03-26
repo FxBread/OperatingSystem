@@ -4,10 +4,11 @@
 #include <string.h>
 #include <stdbool.h>
 #include "closepipe.h"
+#include <time.h>
 
 #define MAX_MSG 256
 #define MAX_INPUT_VALUE 32
-#define MAX_BOOKING 100
+#define MAX_BOOKING 1000
 
 typedef struct {
     int command_type;
@@ -15,6 +16,7 @@ typedef struct {
 }InputMsg;
 
 typedef struct DistributeItem{
+    int parking_space[10];
     int battery[3];
     int cable[3];
     int locker[3];
@@ -35,6 +37,7 @@ typedef struct{
     int facilitates[6];
     int command_type;
     int status;
+    int scheduler_type;
 }BookingMsg;
 
 enum Facility{
@@ -47,7 +50,7 @@ enum AllocateType{
     FCFS=0,PRIO=1,OPTI=2,ALL=3
 };
 enum State{
-    PENDING=0,DONE=1
+    PENDING=0,DONE=1,WAITING=2
 };
 
 //global variable
@@ -56,6 +59,7 @@ int process_count = 5;//number of processes
 int booking_count = 0;
 BookingMsg bookingMsgs[MAX_BOOKING]; //store all booking value
 int bookingMsgs_count = 0;
+DistributeItem distributeItems[7][24];//resource allocate for 24x7 hour
 
 void input_process(){
     char command[MAX_MSG];
@@ -65,7 +69,7 @@ void input_process(){
         BookingMsg bookingMsg;
         //clear data of bookingmsg
         memset(&bookingMsg, 0, sizeof(BookingMsg));
-        bookingMsg.status = PENDING;
+        bookingMsg.status = WAITING;
         printf("Please enter booking:\n");
         scanf("%s %[^\n]",command,args);
         if(strcmp(command,"addParking")==0){
@@ -123,6 +127,20 @@ void input_process(){
                     strcpy(bookingMsg.member_name,temp);
                     strcpy(bookingMsg.booking_date,tokens[1]);
                     strcpy(bookingMsg.booking_time,tokens[2]);
+
+
+                    char temp2[50];
+                    strcpy(temp2,tokens[1]);
+                    size_t temp_size = strlen(temp2);
+                    temp2[temp_size] = ' ';
+                    temp2[temp_size+1] = '\0';
+                    strcat(temp2, tokens[2]);//concat date and time
+                    struct tm tm;
+                    memset(&tm, 0, sizeof(tm));
+                    strptime(temp2, "%Y-%m-%d %H:%M", &tm);//string to timestamp
+                    bookingMsg.date = mktime(&tm);
+
+
                     if (bookingMsg.command_type==3) {
                         bookingMsg.parking_need=false;
                     }else {
@@ -160,20 +178,39 @@ void input_process(){
                     }
                     if (strcmp(tokens[i],"battery")==0) {
                         bookingMsg.facilitates[BATTERY] = 1;
+                        if (bookingMsg.command_type!=3) {//all command need a pair of item except essentialbook
+                            bookingMsg.facilitates[CABLE] = 1;
+                        }
                     }else if (strcmp(tokens[i],"cable")==0) {
                         bookingMsg.facilitates[CABLE] = 1;
+                        if (bookingMsg.command_type!=3) {
+                            bookingMsg.facilitates[BATTERY] = 1;
+                        }
                     }else if (strcmp(tokens[i],"locker")==0) {
                         bookingMsg.facilitates[LOCKER] = 1;
+                        if (bookingMsg.command_type!=3) {
+                            bookingMsg.facilitates[UMBRELLA] = 1;
+                        }
                     }else if (strcmp(tokens[i],"umbrella")==0) {
                         bookingMsg.facilitates[UMBRELLA] = 1;
+                        if (bookingMsg.command_type!=3) {
+                            bookingMsg.facilitates[LOCKER] = 1;
+                        }
                     }else if (strcmp(tokens[i],"inflation")==0) {
                         bookingMsg.facilitates[INFLATION] = 1;
+                        if (bookingMsg.command_type!=3) {
+                            bookingMsg.facilitates[VALET] = 1;
+                        }
                     }else if (strcmp(tokens[i],"valet")==0) {
                         bookingMsg.facilitates[VALET] = 1;
+                        if (bookingMsg.command_type!=3) {
+                            bookingMsg.facilitates[INFLATION] = 1;
+                        }
                     }
 
                 }
             }//BATTERY=0,CABLE=1,LOCKER=2,UMBRELLA=3,INFLATION=4,VALET=5
+            printf("-> [PENDING]\n");
             printf("booking msg :commandtype %d name %s date %s time %s duration %f parkingneed %d",
                 bookingMsg.command_type,bookingMsg.member_name,
                 bookingMsg.booking_date,bookingMsg.booking_time,
@@ -181,20 +218,31 @@ void input_process(){
             printf("booking msg :battery %d cable %d locker %d umbrella %d inflation %d valet %d\n",
                 bookingMsg.facilitates[BATTERY],bookingMsg.facilitates[CABLE],bookingMsg.facilitates[LOCKER],
                 bookingMsg.facilitates[UMBRELLA],bookingMsg.facilitates[INFLATION],bookingMsg.facilitates[VALET]);
-            bookingMsgs[booking_count++] = bookingMsg;
-            printf("%d",booking_count);
+            bookingMsgs[booking_count++] = bookingMsg; //store in booking array
+            printf("test: booking count %d\n",booking_count);
         }
 
-        //
-        // write(main_to_scheduler[PIPE_WRITE],&bookingMsg,sizeof(BookingMsg)); //send message to scheduler process
-        // while (1) {
-        //     read(scheduler_to_main[PIPE_READ],&bookingMsg,sizeof(BookingMsg));//receive status
-        //     if (bookingMsg.status==DONE) {
-        //         printf("-> [DONE]\n");
-        //         break;
-        //     }
-        //
-        // }
+
+
+        if (bookingMsg.command_type==5) {
+            if (count==1) {
+                char *temp = tokens[0];
+                printf("%s\n",temp);
+            }else {
+                printf("unvalid args.\n");
+                break;
+            }
+            write(main_to_scheduler[PIPE_WRITE],&bookingMsgs,sizeof(bookingMsgs)); //send message to scheduler process
+            while (1) {
+                read(scheduler_to_main[PIPE_READ],&bookingMsgs,sizeof(bookingMsgs));//receive status
+                if (bookingMsgs[0].status==DONE) {
+                    printf("-> [DONE]\n");
+                    break;
+                }
+
+            }
+        }
+
     }
 
 }
@@ -207,17 +255,17 @@ void fcfs_process() {
 void scheduler_process() {
     close_scheduler_unused_pipe();
     while(1) {
-        BookingMsg bookingMsg;
-        read(main_to_scheduler[PIPE_READ],&bookingMsg,sizeof(BookingMsg));
-        printf("-> [PENDING]\n");
+        BookingMsg recbookingMsgs[MAX_BOOKING]; //store all booking value
+        read(main_to_scheduler[PIPE_READ],&recbookingMsgs,sizeof(recbookingMsgs));
         //processing scheduler function
-        write(scheduler_to_fcfs[PIPE_WRITE],&bookingMsg,sizeof(BookingMsg));
+        write(scheduler_to_fcfs[PIPE_WRITE],&recbookingMsgs,sizeof(recbookingMsgs));
 
-        bookingMsg.status = DONE;
-        write(scheduler_to_main[PIPE_WRITE],&bookingMsg,sizeof(BookingMsg)); //feedback to parent
+        recbookingMsgs[0].status = DONE;
+        write(scheduler_to_main[PIPE_WRITE],&recbookingMsgs,sizeof(recbookingMsgs)); //feedback to parent
 
     }
 }
+
 void fork_child_create() {
     if (fork() == 0 ) {
         // scheduler process
