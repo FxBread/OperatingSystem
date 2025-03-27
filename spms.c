@@ -58,7 +58,7 @@ int process_count = 5;//number of processes
 int booking_count = 0;
 BookingMsg bookingMsgs[MAX_BOOKING]; //store all booking value
 int bookingMsgs_count = 0;
-DistributeItem distributeItems[7][24];//resource allocate for 24x7 hour
+// DistributeItem distributeItems[7][24];//resource allocate for 24x7 hour
 
 
 int convert_date_to_day_index(time_t date) {
@@ -294,19 +294,51 @@ void input_process(){
     }
 
 }
-
+int check_parking_valid(DistributeItem *distribute_item,int start_hour_index,int end_hour_index ) {
+    for (int i = 0;i<10;i++) {
+        bool parking_valid = true;
+        for (int j = start_hour_index;j<end_hour_index;j++) {
+            if (distribute_item[j].parking_space[i]==1) {
+                parking_valid = false;
+            }
+        }
+        if (parking_valid) {
+            return i;
+        }
+    }
+    return -1;
+}
+bool check_facilitates_need(int *facilitates) {
+    for (int i = 0;i<6;i++) {
+        if (facilitates[i]==1) {
+            return true;
+        }
+    }
+    return false;
+}
 void fcfs_process() {
     close_fcfs_unused_pipe();
 
     while (1) {
         BookingMsg recbookingMsgs[MAX_BOOKING]; //store all booking value
+        DistributeItem distributeItems[7][24];//resource allocate for 24x7 hour
         read(scheduler_to_fcfs[PIPE_READ],&recbookingMsgs,sizeof(recbookingMsgs));
 
         for (int i = 0;i<MAX_BOOKING;i++) {//calculate booking duration time
             int day_index = convert_date_to_day_index(recbookingMsgs[i].date);//sun-sat 0-6day
             int start_hour_index = convert_date_to_start_hour_index(recbookingMsgs[i].booking_time);//time slot index 0-23
             int end_hour_index = convert_date_to_end_hour_index(start_hour_index,recbookingMsgs[i].book_time_duration);
-            
+            int parking_index;
+            int facilitates_index;
+            if (end_hour_index<23) {
+                if (recbookingMsgs[i].parking_need==true) {
+                    parking_index=check_parking_valid(distributeItems[day_index],start_hour_index,end_hour_index);
+
+                }
+                if (check_facilitates_need(recbookingMsgs[i].facilitates)) {
+                    facilitates_index = check_facility_valid(distributeItems[day_index],start_hour_index,end_hour_index);
+                }
+            }
             if (strcmp(recbookingMsgs[i+1].member_name, "")==0) {
                 break;
             }
