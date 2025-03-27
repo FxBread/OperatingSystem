@@ -9,6 +9,12 @@
 #define MAX_MSG 256
 #define MAX_INPUT_VALUE 32
 #define MAX_BOOKING 1000
+#define INVALID_INDEX -2
+#define NO_PARKING_SPACE -1
+#define USED 0
+#define UNUSED 1
+#define FAIL 0
+#define SUCCESS 1
 
 typedef struct {
     int command_type;
@@ -17,12 +23,13 @@ typedef struct {
 
 typedef struct DistributeItem{
     int parking_space[10];
-    int battery[3];
-    int cable[3];
-    int locker[3];
-    int umbrella[3];
-    int inflation[3];
-    int valet[3];
+    // int battery[3];
+    // int cable[3];
+    // int locker[3];
+    // int umbrella[3];
+    // int inflation[3];
+    // int valet[3];
+    int facilities[6][3];
 }DistributeItem;
 
 
@@ -34,7 +41,7 @@ typedef struct{
     int parking_place;
     bool parking_need;
     float book_time_duration;
-    int facilitates[6];
+    int facilities[6];
     int command_type;
     int status;
 }BookingMsg;
@@ -103,7 +110,7 @@ void input_process(){
         BookingMsg bookingMsg;
         //clear data of bookingmsg
         memset(&bookingMsg, 0, sizeof(BookingMsg));
-        bookingMsg.status = WAITING;
+        // bookingMsg.status = WAITING;
         printf("Please enter booking:\n");
         scanf("%s %[^\n]",command,args);
         if(strcmp(command,"addParking")==0){
@@ -211,34 +218,34 @@ void input_process(){
                         *temp = '\0';//delete ;
                     }
                     if (strcmp(tokens[i],"battery")==0) {
-                        bookingMsg.facilitates[BATTERY] = 1;
+                        bookingMsg.facilities[BATTERY] = 1;
                         if (bookingMsg.command_type!=3) {//all command need a pair of item except essentialbook
-                            bookingMsg.facilitates[CABLE] = 1;
+                            bookingMsg.facilities[CABLE] = 1;
                         }
                     }else if (strcmp(tokens[i],"cable")==0) {
-                        bookingMsg.facilitates[CABLE] = 1;
+                        bookingMsg.facilities[CABLE] = 1;
                         if (bookingMsg.command_type!=3) {
-                            bookingMsg.facilitates[BATTERY] = 1;
+                            bookingMsg.facilities[BATTERY] = 1;
                         }
                     }else if (strcmp(tokens[i],"locker")==0) {
-                        bookingMsg.facilitates[LOCKER] = 1;
+                        bookingMsg.facilities[LOCKER] = 1;
                         if (bookingMsg.command_type!=3) {
-                            bookingMsg.facilitates[UMBRELLA] = 1;
+                            bookingMsg.facilities[UMBRELLA] = 1;
                         }
                     }else if (strcmp(tokens[i],"umbrella")==0) {
-                        bookingMsg.facilitates[UMBRELLA] = 1;
+                        bookingMsg.facilities[UMBRELLA] = 1;
                         if (bookingMsg.command_type!=3) {
-                            bookingMsg.facilitates[LOCKER] = 1;
+                            bookingMsg.facilities[LOCKER] = 1;
                         }
                     }else if (strcmp(tokens[i],"inflation")==0) {
-                        bookingMsg.facilitates[INFLATION] = 1;
+                        bookingMsg.facilities[INFLATION] = 1;
                         if (bookingMsg.command_type!=3) {
-                            bookingMsg.facilitates[VALET] = 1;
+                            bookingMsg.facilities[VALET] = 1;
                         }
                     }else if (strcmp(tokens[i],"valet")==0) {
-                        bookingMsg.facilitates[VALET] = 1;
+                        bookingMsg.facilities[VALET] = 1;
                         if (bookingMsg.command_type!=3) {
-                            bookingMsg.facilitates[INFLATION] = 1;
+                            bookingMsg.facilities[INFLATION] = 1;
                         }
                     }
 
@@ -250,8 +257,8 @@ void input_process(){
                 bookingMsg.booking_date,bookingMsg.booking_time,
                 bookingMsg.book_time_duration,bookingMsg.parking_need);
             printf("booking msg :battery %d cable %d locker %d umbrella %d inflation %d valet %d\n",
-                bookingMsg.facilitates[BATTERY],bookingMsg.facilitates[CABLE],bookingMsg.facilitates[LOCKER],
-                bookingMsg.facilitates[UMBRELLA],bookingMsg.facilitates[INFLATION],bookingMsg.facilitates[VALET]);
+                bookingMsg.facilities[BATTERY],bookingMsg.facilities[CABLE],bookingMsg.facilities[LOCKER],
+                bookingMsg.facilities[UMBRELLA],bookingMsg.facilities[INFLATION],bookingMsg.facilities[VALET]);
             bookingMsgs[booking_count++] = bookingMsg; //store in booking array
             printf("test: booking count %d\n",booking_count);
         }
@@ -294,11 +301,26 @@ void input_process(){
     }
 
 }
+void init_fcfs_value(DistributeItem distributeItems[][24]) {
+    for (int i=0;i<7;i++) {
+        for (int j=0;j<24;j++) {
+            for (int k=0;k<10;k++) {
+                distributeItems[i][j].parking_space[k] = UNUSED;
+            }
+            for (int l=0;l<6;l++) {
+                for (int m=0;m<3;m++) {
+                    distributeItems[i][j].facilities[l][m] = UNUSED;
+                }
+            }
+        }
+    }
+}
+
 int check_parking_valid(DistributeItem *distribute_item,int start_hour_index,int end_hour_index ) {
     for (int i = 0;i<10;i++) {
         bool parking_valid = true;
         for (int j = start_hour_index;j<end_hour_index;j++) {
-            if (distribute_item[j].parking_space[i]==1) {
+            if (distribute_item[j].parking_space[i]==USED) {
                 parking_valid = false;
             }
         }
@@ -306,15 +328,65 @@ int check_parking_valid(DistributeItem *distribute_item,int start_hour_index,int
             return i;
         }
     }
-    return -1;
+    return NO_PARKING_SPACE;
 }
-bool check_facilitates_need(int *facilitates) {
+bool check_facilities_need(int *facilities) {
     for (int i = 0;i<6;i++) {
-        if (facilitates[i]==1) {
+        if (facilities[i]==1) {
             return true;
         }
     }
     return false;
+}
+bool check_facility_valid(int *facilities,DistributeItem *distribute_item,int start_hour_index,int end_hour_index) {
+    bool facility_valid = false;
+    int count = 0;
+    int facilities_list[6] = {INVALID_INDEX};
+    bool next = true;
+    for (int i = 0;i<6;i++) {
+        if (facilities[i]==1) {
+            facilities_list[count++] = i;
+        }
+    }
+    for (int i = 0;i<count;i++) {
+        if (next == false) {
+            return next;//An facility with no remaining time period returns false.
+        }
+        for (int j = 0; j<3;j++) {
+            facility_valid = true;
+            for (int k = start_hour_index;k<end_hour_index;k++) {
+                if (distribute_item[k].facilities[facilities_list[i]][j]==USED) {
+                    facility_valid = false;
+                    break;//If a time period is unavailable, go to the next idle item loop.
+                }
+            }
+            if (facility_valid) {
+                next = true;
+                break;
+            }//There are time periods left to move to the next facility loop.
+            next = false;
+        }
+    }
+    return next;
+
+}
+void set_parking_space_used(DistributeItem *distribute_item,int parking_index,int start_hour_index,int end_hour_index) {
+    for (int i = start_hour_index;i<end_hour_index;i++) {
+        distribute_item[i].parking_space[parking_index] = USED;
+    }
+}
+void set_facility_used(int *facilities,DistributeItem *distribute_item,int start_hour_index,int end_hour_index) {
+    for (int j = 0;j<6;j++) {
+        if (facilities[j]==1) {
+            for (int i = start_hour_index;i<end_hour_index;i++) {
+                for ( int k = 0;k<3;k++) {
+                    distribute_item[i].facilities[j][k] = USED;
+                }
+            }
+        }
+
+    }
+
 }
 void fcfs_process() {
     close_fcfs_unused_pipe();
@@ -322,22 +394,31 @@ void fcfs_process() {
     while (1) {
         BookingMsg recbookingMsgs[MAX_BOOKING]; //store all booking value
         DistributeItem distributeItems[7][24];//resource allocate for 24x7 hour
+        init_fcfs_value(distributeItems);//init data to be unused
         read(scheduler_to_fcfs[PIPE_READ],&recbookingMsgs,sizeof(recbookingMsgs));
 
         for (int i = 0;i<MAX_BOOKING;i++) {//calculate booking duration time
             int day_index = convert_date_to_day_index(recbookingMsgs[i].date);//sun-sat 0-6day
             int start_hour_index = convert_date_to_start_hour_index(recbookingMsgs[i].booking_time);//time slot index 0-23
             int end_hour_index = convert_date_to_end_hour_index(start_hour_index,recbookingMsgs[i].book_time_duration);
-            int parking_index;
-            int facilitates_index;
-            if (end_hour_index<23) {
+            int parking_index = INVALID_INDEX;
+            bool facilities_valid = true;
+            if (end_hour_index<24) {
                 if (recbookingMsgs[i].parking_need==true) {
                     parking_index=check_parking_valid(distributeItems[day_index],start_hour_index,end_hour_index);
 
                 }
-                if (check_facilitates_need(recbookingMsgs[i].facilitates)) {
-                    facilitates_index = check_facility_valid(distributeItems[day_index],start_hour_index,end_hour_index);
+                if (check_facilities_need(recbookingMsgs[i].facilities)&&parking_index!=NO_PARKING_SPACE) {
+                    facilities_valid = check_facility_valid(recbookingMsgs[i].facilities,distributeItems[day_index],start_hour_index,end_hour_index);
                 }
+            }
+            if (parking_index!=NO_PARKING_SPACE&&facilities_valid==true) {
+                set_parking_space_used(distributeItems[day_index],parking_index,start_hour_index,end_hour_index);
+                set_facility_used(recbookingMsgs[i].facilities,distributeItems[day_index],start_hour_index,end_hour_index);
+                recbookingMsgs[i].status = SUCCESS;
+            }else {
+
+                recbookingMsgs[i].status = FAIL;
             }
             if (strcmp(recbookingMsgs[i+1].member_name, "")==0) {
                 break;
