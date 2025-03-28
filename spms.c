@@ -8,7 +8,7 @@
 
 #define MAX_MSG 256
 #define MAX_INPUT_VALUE 32
-#define MAX_BOOKING 1000
+#define MAX_BOOKING 100
 #define INVALID_INDEX -2
 #define NO_PARKING_SPACE -1
 #define USED 0
@@ -46,6 +46,12 @@ typedef struct{
     int status;
 }BookingMsg;
 
+typedef struct{
+    BookingMsg bookingMsgs[MAX_BOOKING];
+    int booking_count;
+    int command_type;
+}BookingMsg_for_pipe;
+
 enum Facility{
     BATTERY=0,CABLE=1,LOCKER=2,UMBRELLA=3,INFLATION=4,VALET=5
 };
@@ -71,6 +77,7 @@ int bookingMsgs_count = 0;
 int convert_date_to_day_index(time_t date) {
     char *temp = ctime(&date);
     char temp2[4];
+    temp2[3] = '\0';
     int temp3;
     strncpy(temp2, temp, 3);
     if (strcmp(temp2, "Sun") == 0) {
@@ -132,7 +139,6 @@ void input_process(){
             break;
         }
 
-
         char *tokens[10];
         char *token;
         int count = 0;
@@ -142,7 +148,6 @@ void input_process(){
             token = strtok(NULL," ");
             count++;
         }
-
         if (bookingMsg.command_type==0 || bookingMsg.command_type==1 ||
             bookingMsg.command_type==2 || bookingMsg.command_type==3) {
             if (count >= 4) {
@@ -286,8 +291,11 @@ void input_process(){
             }else {
                 printf("unvalid args.\n");
             }
-            write(main_to_scheduler[PIPE_WRITE],&bookingMsgs,sizeof(bookingMsgs)); //send message to scheduler process
-            write(main_to_scheduler[PIPE_WRITE],&temp,sizeof(temp));
+            BookingMsg_for_pipe bookingMsg_for_pipe;
+            memcpy(bookingMsg_for_pipe.bookingMsgs, bookingMsgs, sizeof(bookingMsgs));
+            bookingMsg_for_pipe.booking_count = booking_count;
+            bookingMsg_for_pipe.command_type = status;
+            write(main_to_scheduler[PIPE_WRITE],&bookingMsg_for_pipe,sizeof(bookingMsg_for_pipe)); //send message to scheduler process
             while (1) {
                 read(scheduler_to_main[PIPE_READ],&status,sizeof(int));//receive status
                 if (status==DONE) {
@@ -317,6 +325,7 @@ void init_fcfs_value(DistributeItem distributeItems[][24]) {
 }
 
 int check_parking_valid(DistributeItem *distribute_item,int start_hour_index,int end_hour_index ) {
+
     for (int i = 0;i<10;i++) {
         bool parking_valid = true;
         for (int j = start_hour_index;j<end_hour_index;j++) {
@@ -389,41 +398,55 @@ void set_facility_used(int *facilities,DistributeItem *distribute_item,int start
 
 }
 void fcfs_process() {
-    close_fcfs_unused_pipe();
 
+    printf("fcfs_processfcfs_processfcfs_processfcfs_processfcfs_processfcfs_processfcfs_process\n");
     while (1) {
-        BookingMsg recbookingMsgs[MAX_BOOKING]; //store all booking value
+        BookingMsg_for_pipe bookingMsg_for_pipe;
         DistributeItem distributeItems[7][24];//resource allocate for 24x7 hour
         init_fcfs_value(distributeItems);//init data to be unused
-        read(scheduler_to_fcfs[PIPE_READ],&recbookingMsgs,sizeof(recbookingMsgs));
-
-        for (int i = 0;i<MAX_BOOKING;i++) {//calculate booking duration time
+        read(scheduler_to_fcfs[PIPE_READ],&bookingMsg_for_pipe,sizeof(bookingMsg_for_pipe));
+        BookingMsg *recbookingMsgs = bookingMsg_for_pipe.bookingMsgs; //store all booking value
+        booking_count = bookingMsg_for_pipe.booking_count;
+        printf("booking_count %d\n",bookingMsg_for_pipe.booking_count);
+        printf("date %d\n",convert_date_to_day_index(recbookingMsgs[0].date));
+        for (int i = 0;i<booking_count;i++) {//calculate booking duration time
             int day_index = convert_date_to_day_index(recbookingMsgs[i].date);//sun-sat 0-6day
             int start_hour_index = convert_date_to_start_hour_index(recbookingMsgs[i].booking_time);//time slot index 0-23
             int end_hour_index = convert_date_to_end_hour_index(start_hour_index,recbookingMsgs[i].book_time_duration);
             int parking_index = INVALID_INDEX;
             bool facilities_valid = true;
+            printf("fcfs process loop %d\n",i);
+            printf("data day_index %d starthour %d end hour\n",day_index,start_hour_index,end_hour_index);
             if (end_hour_index<24) {
+                printf("end_hour_index %d \n",end_hour_index);
+                printf("parking_need %d \n",recbookingMsgs[i].parking_need);
                 if (recbookingMsgs[i].parking_need==true) {
-                    parking_index=check_parking_valid(distributeItems[day_index],start_hour_index,end_hour_index);
 
+                    parking_index=check_parking_valid(distributeItems[day_index],start_hour_index,end_hour_index);
+                    printf("parking_index %d \n",parking_index);
                 }
                 if (check_facilities_need(recbookingMsgs[i].facilities)&&parking_index!=NO_PARKING_SPACE) {
                     facilities_valid = check_facility_valid(recbookingMsgs[i].facilities,distributeItems[day_index],start_hour_index,end_hour_index);
+                    printf("facilities_valid %d \n",facilities_valid);
                 }
             }
             if (parking_index!=NO_PARKING_SPACE&&facilities_valid==true) {
                 set_parking_space_used(distributeItems[day_index],parking_index,start_hour_index,end_hour_index);
                 set_facility_used(recbookingMsgs[i].facilities,distributeItems[day_index],start_hour_index,end_hour_index);
                 recbookingMsgs[i].status = SUCCESS;
+                printf("parking space %d\n",distributeItems[day_index][start_hour_index].parking_space[parking_index]);
+                printf("facility %d\n",distributeItems[day_index][start_hour_index].facilities[0][0]);
             }else {
 
                 recbookingMsgs[i].status = FAIL;
             }
             if (strcmp(recbookingMsgs[i+1].member_name, "")==0) {
+                int status = DONE;
+                write(fcfs_to_scheduler[PIPE_WRITE],&status,sizeof(int)); //feedback to scheduler process
                 break;
             }
         }
+
 
     }
 
@@ -431,18 +454,17 @@ void fcfs_process() {
 }
 
 void scheduler_process() {
-    close_scheduler_unused_pipe();
+    printf("scheduler_processs\n");
     int status;
-
     while(1) {
-        BookingMsg recbookingMsgs[MAX_BOOKING]; //store all booking value
-        read(main_to_scheduler[PIPE_READ],&recbookingMsgs,sizeof(recbookingMsgs));
-        read(main_to_scheduler[PIPE_READ],&status,sizeof(int));//receive scheduler type
-        printf("%d\n",status);
+        BookingMsg_for_pipe bookingMsg_for_pipe;
+        read(main_to_scheduler[PIPE_READ],&bookingMsg_for_pipe,sizeof(bookingMsg_for_pipe));
+        printf("the booking_count %d\n",bookingMsg_for_pipe.booking_count);
         //processing scheduler function
-        if (status==FCFS) {
-
-            write(scheduler_to_fcfs[PIPE_WRITE],&recbookingMsgs,sizeof(recbookingMsgs));
+        if (bookingMsg_for_pipe.command_type==FCFS) {
+            write(scheduler_to_fcfs[PIPE_WRITE],&bookingMsg_for_pipe,sizeof(bookingMsg_for_pipe));
+            read(fcfs_to_scheduler[PIPE_READ],&status,sizeof(int));//receive scheduler type
+            printf("scheduler status %d\n",status);
         }
 
         status = DONE;
@@ -454,13 +476,15 @@ void scheduler_process() {
 void fork_child_create() {
     if (fork() == 0 ) {
         // scheduler process
+        close_scheduler_unused_pipe();
         scheduler_process();
-        // exit(0);
+        exit(0);
     }
     if (fork() == 0 ) {
         // fcfs process
+        close_fcfs_unused_pipe();
         fcfs_process();
-        // exit(0);
+        exit(0);
     }
     // if (fork() == 0 ) {
     //     // priority process
@@ -475,6 +499,7 @@ void fork_child_create() {
     // if (fork() == 0 ) {
     //     // printer process
     // }
+    close_main_unused_pipe();
 }
 
 
@@ -489,7 +514,7 @@ void init_system(){
         printf("Pipe creation error\n");
     }
     fork_child_create();
-    close_main_unused_pipe();
+
     input_process();
 
 }
