@@ -201,9 +201,10 @@ void input_process(){
                 if (count == 4) {
 
                     char *temp = strchr(tokens[3],';');
+                    printf("special test %s\n",temp);
                     if (temp!=NULL) {
                         *temp = '\0';//delete ;
-                        bookingMsg.book_time_duration = atof(temp);
+                        bookingMsg.book_time_duration = atof(tokens[3]);
                     }else {
                         printf("unvalid args.\n");
                         break;
@@ -296,14 +297,11 @@ void input_process(){
             bookingMsg_for_pipe.booking_count = booking_count;
             bookingMsg_for_pipe.command_type = status;
             write(main_to_scheduler[PIPE_WRITE],&bookingMsg_for_pipe,sizeof(bookingMsg_for_pipe)); //send message to scheduler process
-            while (1) {
-                read(scheduler_to_main[PIPE_READ],&status,sizeof(int));//receive status
-                if (status==DONE) {
-                    printf("-> [DONE]\n");
-                    break;
-                }
 
-            }
+            read(scheduler_to_main[PIPE_READ],&bookingMsg_for_pipe,sizeof(bookingMsg_for_pipe));//receive status
+            printf("-> [DONE]\n");
+
+
         }
 
     }
@@ -331,6 +329,7 @@ int check_parking_valid(DistributeItem *distribute_item,int start_hour_index,int
         for (int j = start_hour_index;j<end_hour_index;j++) {
             if (distribute_item[j].parking_space[i]==USED) {
                 parking_valid = false;
+                break;
             }
         }
         if (parking_valid) {
@@ -350,7 +349,10 @@ bool check_facilities_need(int *facilities) {
 bool check_facility_valid(int *facilities,DistributeItem *distribute_item,int start_hour_index,int end_hour_index) {
     bool facility_valid = false;
     int count = 0;
-    int facilities_list[6] = {INVALID_INDEX};
+    int facilities_list[6];
+    for (int i = 0;i<6;i++) {
+        facilities_list[i] = 0;
+    }
     bool next = true;
     for (int i = 0;i<6;i++) {
         if (facilities[i]==1) {
@@ -358,25 +360,26 @@ bool check_facility_valid(int *facilities,DistributeItem *distribute_item,int st
         }
     }
     for (int i = 0;i<count;i++) {
-        if (next == false) {
-            return next;//An facility with no remaining time period returns false.
-        }
-        for (int j = 0; j<3;j++) {
-            facility_valid = true;
+        bool facility_available = false;
+        int facility_idx = facilities_list[i];
+        for (int j = 0;j<3;j++) {
+            bool slot_available = true;
             for (int k = start_hour_index;k<end_hour_index;k++) {
-                if (distribute_item[k].facilities[facilities_list[i]][j]==USED) {
-                    facility_valid = false;
-                    break;//If a time period is unavailable, go to the next idle item loop.
+                if (distribute_item[k].facilities[facility_idx][j]==USED) {
+                    slot_available = false;
+                    break;
                 }
             }
-            if (facility_valid) {
-                next = true;
+            if (slot_available) {
+                facility_available = true;
                 break;
-            }//There are time periods left to move to the next facility loop.
-            next = false;
+            }
+        }
+        if (!facility_available) {
+            return false;
         }
     }
-    return next;
+    return true;
 
 }
 void set_parking_space_used(DistributeItem *distribute_item,int parking_index,int start_hour_index,int end_hour_index) {
@@ -387,15 +390,23 @@ void set_parking_space_used(DistributeItem *distribute_item,int parking_index,in
 void set_facility_used(int *facilities,DistributeItem *distribute_item,int start_hour_index,int end_hour_index) {
     for (int j = 0;j<6;j++) {
         if (facilities[j]==1) {
-            for (int i = start_hour_index;i<end_hour_index;i++) {
-                for ( int k = 0;k<3;k++) {
-                    distribute_item[i].facilities[j][k] = USED;
+            for ( int k = 0;k<3;k++) {
+                bool position_available = true;
+                for (int i = start_hour_index;i<end_hour_index;i++) {
+                    if (distribute_item[i].facilities[j][k] == USED) {
+                        position_available = false;
+                        break;
+                    }
+                }
+                if (position_available) {
+                    for (int i = start_hour_index; i < end_hour_index; i++) {
+                        distribute_item[i].facilities[j][k] = USED;
+                    }
+                    return;
                 }
             }
         }
-
     }
-
 }
 void fcfs_process() {
 
@@ -416,9 +427,8 @@ void fcfs_process() {
             int parking_index = INVALID_INDEX;
             bool facilities_valid = true;
             printf("fcfs process loop %d\n",i);
-            printf("data day_index %d starthour %d end hour\n",day_index,start_hour_index,end_hour_index);
+            printf("data day_index %d starthour %d end hour %d\n",day_index,start_hour_index,end_hour_index);
             if (end_hour_index<24) {
-                printf("end_hour_index %d \n",end_hour_index);
                 printf("parking_need %d \n",recbookingMsgs[i].parking_need);
                 if (recbookingMsgs[i].parking_need==true) {
 
@@ -429,24 +439,29 @@ void fcfs_process() {
                     facilities_valid = check_facility_valid(recbookingMsgs[i].facilities,distributeItems[day_index],start_hour_index,end_hour_index);
                     printf("facilities_valid %d \n",facilities_valid);
                 }
+            }else {
+                recbookingMsgs[i].status = FAIL;
+                continue;
             }
             if (parking_index!=NO_PARKING_SPACE&&facilities_valid==true) {
                 set_parking_space_used(distributeItems[day_index],parking_index,start_hour_index,end_hour_index);
                 set_facility_used(recbookingMsgs[i].facilities,distributeItems[day_index],start_hour_index,end_hour_index);
                 recbookingMsgs[i].status = SUCCESS;
-                printf("parking space %d\n",distributeItems[day_index][start_hour_index].parking_space[parking_index]);
+                printf("parking space used %d\n",distributeItems[day_index][start_hour_index].parking_space[parking_index]);
                 printf("facility %d\n",distributeItems[day_index][start_hour_index].facilities[0][0]);
+                printf("parking_space %d \n\n",parking_index);
             }else {
-
+                printf("parking_space %d \n",parking_index);
                 recbookingMsgs[i].status = FAIL;
             }
-            if (strcmp(recbookingMsgs[i+1].member_name, "")==0) {
-                int status = DONE;
-                write(fcfs_to_scheduler[PIPE_WRITE],&status,sizeof(int)); //feedback to scheduler process
-                break;
-            }
+            // if (strcmp(recbookingMsgs[i+1].member_name, "")==0) {
+            //     memcpy(bookingMsg_for_pipe.bookingMsgs, recbookingMsgs, sizeof(recbookingMsgs));
+            //     write(fcfs_to_scheduler[PIPE_WRITE],&bookingMsg_for_pipe,sizeof(bookingMsg_for_pipe)); //feedback to scheduler process
+            //     break;
+            // }
         }
-
+        memcpy(bookingMsg_for_pipe.bookingMsgs, recbookingMsgs, sizeof(recbookingMsgs));
+        write(fcfs_to_scheduler[PIPE_WRITE],&bookingMsg_for_pipe,sizeof(bookingMsg_for_pipe)); //feedback to scheduler process
 
     }
 
@@ -463,16 +478,145 @@ void scheduler_process() {
         //processing scheduler function
         if (bookingMsg_for_pipe.command_type==FCFS) {
             write(scheduler_to_fcfs[PIPE_WRITE],&bookingMsg_for_pipe,sizeof(bookingMsg_for_pipe));
-            read(fcfs_to_scheduler[PIPE_READ],&status,sizeof(int));//receive scheduler type
-            printf("scheduler status %d\n",status);
+            read(fcfs_to_scheduler[PIPE_READ],&bookingMsg_for_pipe,sizeof(bookingMsg_for_pipe));//receive scheduler type
         }
+        write(scheduler_to_print[PIPE_WRITE],&bookingMsg_for_pipe,sizeof(bookingMsg_for_pipe)); //send to print process
+        read(print_to_scheduler[PIPE_READ],&bookingMsg_for_pipe,sizeof(bookingMsg_for_pipe)); //receive from print process
 
-        status = DONE;
-        write(scheduler_to_main[PIPE_WRITE],&status,sizeof(int)); //feedback to parent
+        write(scheduler_to_main[PIPE_WRITE],&bookingMsg_for_pipe,sizeof(bookingMsg_for_pipe)); //feedback to parent
 
     }
 }
 
+void print_process() {
+    printf("print_processs\n");
+    while(1) {
+        BookingMsg_for_pipe bookingMsg_for_pipe;
+        read(scheduler_to_print[PIPE_READ],&bookingMsg_for_pipe,sizeof(bookingMsg_for_pipe));
+        BookingMsg *recbookingMsgs = bookingMsg_for_pipe.bookingMsgs;
+        int booking_count = bookingMsg_for_pipe.booking_count;
+
+        char *command_type;
+        if (bookingMsg_for_pipe.command_type==FCFS) {
+            command_type = "FCFS";
+        }else if (bookingMsg_for_pipe.command_type==PRIO) {
+            command_type = "Priority";
+        }else if (bookingMsg_for_pipe.command_type==OPTI) {
+            command_type = "Optimized";
+        }else if (bookingMsg_for_pipe.command_type==ALL) {
+            command_type = "ALL";
+        }
+        char* member_names[] = {
+            "member_A",
+            "member_B",
+            "member_C",
+            "member_D",
+            "member_E",
+        };
+        //processing print function
+        //parking booking -accepted
+        printf("*** Parking Booking - ACCEPTED / %s ***\n", command_type);
+
+        for (int member = 0; member<5;member++) {
+            printf("%s has the following bookings:\n", member_names[member]);
+            printf("Date         Start   End       Type         Device\n");
+            printf("===========================================================================\n");
+
+            for (int i = 0; i < booking_count; i++) {
+                if (strcmp(recbookingMsgs[i].member_name, member_names[member]) != 0) {continue;}
+                if (recbookingMsgs[i].status==FAIL) {continue;}
+                int start_time = convert_date_to_start_hour_index(recbookingMsgs[i].booking_time);
+                int end_time = convert_date_to_end_hour_index(start_time,recbookingMsgs[i].book_time_duration);
+                char str_start_time[6];
+                char str_end_time[6];
+                char *booking_type;
+                if (recbookingMsgs[i].command_type == 0) {
+                    booking_type = "Parking";
+                }else if (recbookingMsgs[i].command_type == 1) {
+                    booking_type = "Reservation";
+                }else if (recbookingMsgs[i].command_type == 2) {
+                    booking_type = "Event";
+                }else if (recbookingMsgs[i].command_type == 3) {
+                    booking_type = "*";
+                }
+                sprintf(str_start_time, "%02d:00", start_time);
+                sprintf(str_end_time, "%02d:00", end_time);
+
+
+                printf("%s   %s     %s   %-12s ", recbookingMsgs[i].booking_date, str_start_time, str_end_time, booking_type);
+                bool facilities_valid = false;
+                char* facility_names[] = {
+                    "BATTERY",
+                    "CABLE",
+                    "LOCKER",
+                    "UMBRELLA",
+                    "INFLATION",
+                    "VALET"
+                };
+                for (int i2 = 0; i2 < 6; i2++) {
+                    if (recbookingMsgs[i].facilities[i2]==1) {
+                        facilities_valid = true;
+                        printf("%-20s \n                                            ", facility_names[i2]);
+                    }
+                }
+                if (facilities_valid==false) {
+                    printf("- ");
+                }
+                printf("\n");
+            }
+        }
+
+        //parking booking -REJECTED
+        printf("*** Parking Booking - REJECTED / %s ***\n", command_type);
+        for (int member = 0; member<5;member++) {
+            printf("%s has the following bookings:\n\n", member_names[member]);
+            printf("Date         Start   End       Type         Device\n");
+            printf("===========================================================================\n");
+            for (int i = 0; i < booking_count; i++) {
+                if (strcmp(recbookingMsgs[i].member_name, member_names[member]) != 0) {continue;}
+                if (recbookingMsgs[i].status==SUCCESS) {continue;}
+                int start_time = convert_date_to_start_hour_index(recbookingMsgs[i].booking_time);
+                int end_time = convert_date_to_end_hour_index(start_time,recbookingMsgs[i].book_time_duration);
+                char str_start_time[6];
+                char str_end_time[6];
+                char *booking_type;
+                if (recbookingMsgs[i].command_type == 0) {
+                    booking_type = "Parking";
+                }else if (recbookingMsgs[i].command_type == 1) {
+                    booking_type = "Reservation";
+                }else if (recbookingMsgs[i].command_type == 2) {
+                    booking_type = "Event";
+                }else if (recbookingMsgs[i].command_type == 3) {
+                    booking_type = "*";
+                }
+                sprintf(str_start_time, "%02d:00", start_time);
+                sprintf(str_end_time, "%02d:00", end_time);
+
+                printf("%s   %s     %s   %-12s ", recbookingMsgs[i].booking_date, str_start_time, str_end_time, booking_type);
+                bool facilities_valid = false;
+                char* facility_names[] = {
+                    "BATTERY",
+                    "CABLE",
+                    "LOCKER",
+                    "UMBRELLA",
+                    "INFLATION",
+                    "VALET"
+                };
+                for (int i2 = 0; i2 < 6; i2++) {
+                    if (recbookingMsgs[i].facilities[i2]==1) {
+                        facilities_valid = true;
+                        printf("%-20s \n                                            ", facility_names[i2]);
+                    }
+                }
+                if (facilities_valid==false) {
+                    printf("- ");
+                }
+                printf("\n");
+            }
+        }
+        write(print_to_scheduler[PIPE_WRITE],&bookingMsg_for_pipe,sizeof(bookingMsg_for_pipe)); //send to scheduler process
+    }
+}
 void fork_child_create() {
     if (fork() == 0 ) {
         // scheduler process
@@ -496,9 +640,12 @@ void fork_child_create() {
     //
     //     exit(0);
     // }
-    // if (fork() == 0 ) {
-    //     // printer process
-    // }
+    if (fork() == 0 ) {
+        // printer process
+        close_print_unused_pipe();
+        print_process();
+        exit(0);
+    }
     close_main_unused_pipe();
 }
 
