@@ -10,6 +10,7 @@
 #define MAX_MSG 256
 #define MAX_INPUT_VALUE 32
 #define MAX_BOOKING 100
+#define MAX_PARKING_SPACE 3
 #define INVALID_INDEX -2
 #define NO_PARKING_SPACE -1
 #define USED 0
@@ -23,7 +24,7 @@ typedef struct {
 }InputMsg;
 
 typedef struct DistributeItem{
-    int parking_space[10];
+    int parking_space[MAX_PARKING_SPACE];
     // int battery[3];
     // int cable[3];
     // int locker[3];
@@ -496,7 +497,7 @@ void input_process(){
 void init_pipe_value(DistributeItem distributeItems[][24]) {
     for (int i=0;i<7;i++) {
         for (int j=0;j<24;j++) {
-            for (int k=0;k<10;k++) {
+            for (int k=0;k<MAX_PARKING_SPACE;k++) {
                 distributeItems[i][j].parking_space[k] = UNUSED;
             }
             for (int l=0;l<6;l++) {
@@ -510,7 +511,7 @@ void init_pipe_value(DistributeItem distributeItems[][24]) {
 
 int check_parking_valid(DistributeItem *distribute_item,int start_hour_index,int end_hour_index ) {
 
-    for (int i = 0;i<10;i++) {
+    for (int i = 0;i<MAX_PARKING_SPACE;i++) {
         bool parking_valid = true;
         for (int j = start_hour_index;j<end_hour_index;j++) {
             if (distribute_item[j].parking_space[i]==USED) {
