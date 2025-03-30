@@ -1,12 +1,12 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <string.h>
 #include <stdbool.h>
 #include <signal.h>
 #include "closepipe.h"
 #include <time.h>
-
+#include <sys/types.h>
+#include <unistd.h>
 #define MAX_MSG 256
 #define MAX_INPUT_VALUE 32
 #define MAX_BOOKING 100
@@ -122,9 +122,7 @@ void input_process(){
     char command[MAX_MSG];
     char args[MAX_MSG];
 
-    char filename[MAX_MSG];
-    FILE *file;
-    
+
     while(1){
         BookingMsg bookingMsg;
         //clear data of bookingmsg
@@ -139,8 +137,8 @@ void input_process(){
             args[0] = '\0';
         }
 
-        //batch file
         
+        //command handle
         if(strcmp(command,"addParking")==0){
             bookingMsg.command_type=0;
         }else if(strcmp(command,"addReservation")==0){
@@ -225,7 +223,6 @@ void input_process(){
                 if (count == 4) {
 
                     char *temp = strchr(tokens[3],';');
-                    printf("special test %s\n",temp);
                     if (temp!=NULL) {
                         *temp = '\0';//delete ;
                         bookingMsg.book_time_duration = atof(tokens[3]);
@@ -282,15 +279,9 @@ void input_process(){
                 }
             }//BATTERY=0,CABLE=1,LOCKER=2,UMBRELLA=3,INFLATION=4,VALET=5
             printf("-> [PENDING]\n");
-            printf("booking msg :commandtype %d name %s date %s time %s duration %f parkingneed %d",
-                bookingMsg.command_type,bookingMsg.member_name,
-                bookingMsg.booking_date,bookingMsg.booking_time,
-                bookingMsg.book_time_duration,bookingMsg.parking_need);
-            printf("booking msg :battery %d cable %d locker %d umbrella %d inflation %d valet %d\n",
-                bookingMsg.facilities[BATTERY],bookingMsg.facilities[CABLE],bookingMsg.facilities[LOCKER],
-                bookingMsg.facilities[UMBRELLA],bookingMsg.facilities[INFLATION],bookingMsg.facilities[VALET]);
+
             bookingMsgs[booking_count++] = bookingMsg; //store in booking array
-            printf("test: booking count %d\n",booking_count);
+
         }
 
 
@@ -300,7 +291,6 @@ void input_process(){
             int status;
             if (count==1) {
                 temp = tokens[0];
-                printf("%s\n",temp);
             }else {
                 printf("unvalid args.\n");
                 break;
@@ -484,7 +474,7 @@ void prio_process() {
         read(scheduler_to_prio[PIPE_READ],&bookingMsg_for_pipe,sizeof(bookingMsg_for_pipe));
         BookingMsg *recbookingMsgs = bookingMsg_for_pipe.bookingMsgs; //store all booking value
         booking_count = bookingMsg_for_pipe.booking_count;
-        int prio_order[] = {2,1,0,3};// event->reservation->event->essential
+        int prio_order[] = {2,1,0,3};// event->reservation->parking->essential
         for (int order = 0;order<4;order++) {
             for (int i = 0;i<booking_count;i++) {//calculate booking duration time
                 if (recbookingMsgs[i].command_type == prio_order[order]) { //Handle booking in order
@@ -532,7 +522,6 @@ void scheduler_process() {
     while(1) {
         BookingMsg_for_pipe bookingMsg_for_pipe;
         read(main_to_scheduler[PIPE_READ],&bookingMsg_for_pipe,sizeof(bookingMsg_for_pipe));
-        printf("the booking_count %d\n",bookingMsg_for_pipe.booking_count);
         //processing scheduler function
         if (bookingMsg_for_pipe.command_type==FCFS) {
             write(scheduler_to_fcfs[PIPE_WRITE],&bookingMsg_for_pipe,sizeof(bookingMsg_for_pipe));
@@ -616,7 +605,6 @@ void print_process() {
                     for (int j = 0; j < 6; j++) {
                         if (recbookingMsgs[i].facilities[j]==1) {
                             total_facility_time_slot[j] = total_facility_time_slot[j]+recbookingMsgs[i].book_time_duration;
-                            printf("total_facility_time_slot %f\n",total_facility_time_slot[j]);
                         }
                     }
                 }
@@ -630,15 +618,15 @@ void print_process() {
             float percent_total_number_assigned = total_number_assigned*1.0/total_number_booking;
             float percent_total_number_rejected = total_number_rejected*1.0/total_number_booking;
             printf("     Total Number of Bookings Received: %d\n",total_number_booking);
-            printf("           Number of Bookings Assigned: %d (%.1f)\n",total_number_assigned,percent_total_number_assigned*100);
-            printf("           Number of Bookings Rejected: %d (%.1f)\n",total_number_rejected,percent_total_number_rejected*100);
+            printf("           Number of Bookings Assigned: %d (%.1f%%)\n",total_number_assigned,percent_total_number_assigned*100);
+            printf("           Number of Bookings Rejected: %d (%.1f%%)\n",total_number_rejected,percent_total_number_rejected*100);
             printf("     Utilization of Time Slot:\n");
-            printf("           Battery:   - %.1f\n",total_facility_time_slot[0]*100);
-            printf("           Cable:   - %.1f\n",total_facility_time_slot[1]*100);
-            printf("           Locker:   - %.1f\n",total_facility_time_slot[2]*100);
-            printf("           Umbrella:   - %.1f\n",total_facility_time_slot[3]*100);
-            printf("           Inflation:   - %.1f\n",total_facility_time_slot[4]*100);
-            printf("           Valet:   - %.1f\n",total_facility_time_slot[5]*100);
+            printf("           Battery:   - %.1f%%\n",total_facility_time_slot[0]*100);
+            printf("           Cable:   - %.1f%%\n",total_facility_time_slot[1]*100);
+            printf("           Locker:   - %.1f%%\n",total_facility_time_slot[2]*100);
+            printf("           Umbrella:   - %.1f%%\n",total_facility_time_slot[3]*100);
+            printf("           Inflation:   - %.1f%%\n",total_facility_time_slot[4]*100);
+            printf("           Valet:   - %.1f%%\n",total_facility_time_slot[5]*100);
         }
 
 
