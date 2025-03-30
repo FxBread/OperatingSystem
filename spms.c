@@ -686,12 +686,63 @@ void prio_process() {
     }
 
 }
+void opti_process() {
+    while (1) {
+        BookingMsg_for_pipe bookingMsg_for_pipe;
+        DistributeItem distributeItems[7][24];//resource allocate for 24x7 hour
+        init_pipe_value(distributeItems);//init data to be unused
+        read(scheduler_to_opti[PIPE_READ],&bookingMsg_for_pipe,sizeof(bookingMsg_for_pipe));
+        BookingMsg *recbookingMsgs = bookingMsg_for_pipe.bookingMsgs; //store all booking value
+        booking_count = bookingMsg_for_pipe.booking_count;
+        BookingMsg temp;
+        int i,j;
+        for (i = 0;i<booking_count-1;i++) {//sort booking time
+            for (j = 0;j<booking_count-i-1;j++) {
+                if (recbookingMsgs[j].book_time_duration<recbookingMsgs[j+1].book_time_duration) {
+                    temp = recbookingMsgs[j];
+                    recbookingMsgs[j] = recbookingMsgs[j+1];
+                    recbookingMsgs[j+1] = temp;
+                }
+            }
+        }
+        for (int i = 0;i<booking_count;i++) {//calculate booking duration time
+            int day_index = convert_date_to_day_index(recbookingMsgs[i].date);//sun-sat 0-6day
+            int start_hour_index = convert_date_to_start_hour_index(recbookingMsgs[i].booking_time);//time slot index 0-23
+            int end_hour_index = convert_date_to_end_hour_index(start_hour_index,recbookingMsgs[i].book_time_duration);
+            int parking_index = INVALID_INDEX;
+            bool facilities_valid = true;
+            if (end_hour_index<24) {
+                if (recbookingMsgs[i].parking_need==true) {
 
+                    parking_index=check_parking_valid(distributeItems[day_index],start_hour_index,end_hour_index);
+                }
+                if (check_facilities_need(recbookingMsgs[i].facilities)&&parking_index!=NO_PARKING_SPACE) {
+                    facilities_valid = check_facility_valid(recbookingMsgs[i].facilities,distributeItems[day_index],start_hour_index,end_hour_index);
+                }
+            }else {
+                recbookingMsgs[i].status = FAIL;
+                continue;
+            }
+            if (parking_index!=NO_PARKING_SPACE&&facilities_valid==true) {
+                set_parking_space_used(distributeItems[day_index],parking_index,start_hour_index,end_hour_index);
+                set_facility_used(recbookingMsgs[i].facilities,distributeItems[day_index],start_hour_index,end_hour_index);
+                recbookingMsgs[i].status = SUCCESS;
+
+            }else {
+
+                recbookingMsgs[i].status = FAIL;
+            }
+        }
+        memcpy(bookingMsg_for_pipe.bookingMsgs, recbookingMsgs, sizeof(recbookingMsgs));//copy recboookingMsg to bookingmsg
+        write(opti_to_scheduler[PIPE_WRITE],&bookingMsg_for_pipe,sizeof(bookingMsg_for_pipe)); //feedback to scheduler process
+    }
+}
 
 void scheduler_process() {
     int status;
     BookingMsg_for_pipe bookingMsg_fcfs_saved;
     BookingMsg_for_pipe bookingMsg_prio_saved;
+    BookingMsg_for_pipe bookingMsg_opti_saved;
     while(1) {
         BookingMsg_for_pipe bookingMsg_for_pipe;
         read(main_to_scheduler[PIPE_READ],&bookingMsg_for_pipe,sizeof(bookingMsg_for_pipe));
@@ -702,11 +753,16 @@ void scheduler_process() {
         }else if (bookingMsg_for_pipe.command_type==PRIO) {
             write(scheduler_to_prio[PIPE_WRITE],&bookingMsg_for_pipe,sizeof(bookingMsg_for_pipe));
             read(prio_to_scheduler[PIPE_READ],&bookingMsg_prio_saved,sizeof(bookingMsg_prio_saved));//receive prio result
+        }else if (bookingMsg_for_pipe.command_type==OPTI) {
+            write(scheduler_to_opti[PIPE_WRITE],&bookingMsg_for_pipe,sizeof(bookingMsg_for_pipe));
+            read(opti_to_scheduler[PIPE_READ],&bookingMsg_opti_saved,sizeof(bookingMsg_opti_saved));//receive opti result
         }else if (bookingMsg_for_pipe.command_type==ALL) {
             write(scheduler_to_fcfs[PIPE_WRITE],&bookingMsg_for_pipe,sizeof(bookingMsg_for_pipe));
             read(fcfs_to_scheduler[PIPE_READ],&bookingMsg_fcfs_saved,sizeof(bookingMsg_fcfs_saved));//receive fcfs result
             write(scheduler_to_prio[PIPE_WRITE],&bookingMsg_for_pipe,sizeof(bookingMsg_for_pipe));
             read(prio_to_scheduler[PIPE_READ],&bookingMsg_prio_saved,sizeof(bookingMsg_prio_saved));//receive prio result
+            write(scheduler_to_opti[PIPE_WRITE],&bookingMsg_for_pipe,sizeof(bookingMsg_for_pipe));
+            read(opti_to_scheduler[PIPE_READ],&bookingMsg_opti_saved,sizeof(bookingMsg_opti_saved));//receive opti result
         }
         if (bookingMsg_for_pipe.command_type==FCFS) {
             write(scheduler_to_print[PIPE_WRITE],&bookingMsg_fcfs_saved,sizeof(bookingMsg_fcfs_saved)); //send to print process
@@ -714,6 +770,9 @@ void scheduler_process() {
         }else if (bookingMsg_for_pipe.command_type==PRIO) {
             write(scheduler_to_print[PIPE_WRITE],&bookingMsg_prio_saved,sizeof(bookingMsg_prio_saved)); //send to print process
             read(print_to_scheduler[PIPE_READ],&bookingMsg_prio_saved,sizeof(bookingMsg_prio_saved)); //receive from print process
+        }else if (bookingMsg_for_pipe.command_type==OPTI) {
+            write(scheduler_to_print[PIPE_WRITE],&bookingMsg_opti_saved,sizeof(bookingMsg_opti_saved)); //send to print process
+            read(print_to_scheduler[PIPE_READ],&bookingMsg_opti_saved,sizeof(bookingMsg_opti_saved)); //receive from print process
         }else if (bookingMsg_for_pipe.command_type==ALL) {
             printf("*** Parking Booking Manager – Summary Report ***\n");
             printf("Performance:\n");
@@ -723,6 +782,9 @@ void scheduler_process() {
             printf("  For PRIO:\n");
             write(scheduler_to_print[PIPE_WRITE],&bookingMsg_prio_saved,sizeof(bookingMsg_prio_saved)); //send to print process
             read(print_to_scheduler[PIPE_READ],&bookingMsg_prio_saved,sizeof(bookingMsg_prio_saved)); //receive from print process
+            printf("  For OPTI:\n");
+            write(scheduler_to_print[PIPE_WRITE],&bookingMsg_opti_saved,sizeof(bookingMsg_opti_saved)); //send to print process
+            read(print_to_scheduler[PIPE_READ],&bookingMsg_opti_saved,sizeof(bookingMsg_opti_saved)); //receive from print process
         }
 
 
@@ -769,6 +831,7 @@ void print_process() {
             for (int i = 0; i < booking_count; i++) {
                 if (recbookingMsgs[i].status==SUCCESS) {
                     total_number_assigned++;
+                    total_parking_time_slot = recbookingMsgs[i].book_time_duration+total_parking_time_slot;
                 }else if (recbookingMsgs[i].status==FAIL) {
                     total_number_rejected++;
                 }
@@ -790,6 +853,7 @@ void print_process() {
             }
             float percent_total_number_assigned = total_number_assigned*1.0/total_number_booking;
             float percent_total_number_rejected = total_number_rejected*1.0/total_number_booking;
+            float percent_total_parking_time = total_parking_time_slot*1.0/(7*24*MAX_PARKING_SPACE);
             printf("     Total Number of Bookings Received: %d\n",total_number_booking);
             printf("           Number of Bookings Assigned: %d (%.1f%%)\n",total_number_assigned,percent_total_number_assigned*100);
             printf("           Number of Bookings Rejected: %d (%.1f%%)\n",total_number_rejected,percent_total_number_rejected*100);
@@ -800,6 +864,7 @@ void print_process() {
             printf("           Umbrella:   - %.1f%%\n",total_facility_time_slot[3]*100);
             printf("           Inflation:   - %.1f%%\n",total_facility_time_slot[4]*100);
             printf("           Valet:   - %.1f%%\n",total_facility_time_slot[5]*100);
+            printf("           Parking:   - %.1f%%\n",percent_total_parking_time*100);
         }
 
 
@@ -941,11 +1006,15 @@ void fork_child_create() {
     }else {
         child_pids[2] = pid;
     }
-    // if (fork() == 0 ) {
-    //     // optimize process
-    //
-    //     exit(0);
-    // }
+    pid = fork();
+    if (pid == 0 ) {
+        // optimize process
+        close_opti_unused_pipe();
+        opti_process();
+        exit(0);
+    }else {
+        child_pids[2] = pid;
+    }
     pid = fork();
     if (pid == 0 ) {
         // printer process
