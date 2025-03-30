@@ -117,7 +117,176 @@ void exit_program() {
         }
     }
 }
+void add_batch(char *input_command,char *input_args) {
+    char batch_command[MAX_MSG];
+    char batch_args[MAX_MSG];
+    strcpy(batch_command, input_command);
+    strcpy(batch_args, input_args+1);
+    FILE *batch_file = fopen(batch_args, "r");
+    if (batch_file == NULL) {
+        printf("Cannot open batch file: %s\n", batch_args);
+        exit_program();
+    }
+    printf("Processing batch file: %s\n", batch_args);
+    char line[MAX_MSG];
+    int line_number = 0;
+    while (fgets(line, sizeof(line), batch_file)) {
+        char command[MAX_MSG];
+        char args[MAX_MSG];
+        line_number++;
+        size_t len = strlen(line);
+        if (len > 0 && line[len-1] == '\n') {
+            line[len-1] = '\0';
+        }
+        int line_valid = sscanf(line, "%s %[^\n]", command, args);
+        if (line_valid < 1) {
+            printf("Line %d: Invalid line in batch file: %s\n", line_number, line);
+        }
+        BookingMsg bookingMsg;
+        //clear data of bookingmsg
+        memset(&bookingMsg, 0, sizeof(BookingMsg));
+        //command handle
+        if(strcmp(command,"addParking")==0){
+            bookingMsg.command_type=0;
+        }else if(strcmp(command,"addReservation")==0){
+            bookingMsg.command_type=1;
+        }else if(strcmp(command,"addEvent")==0){
+            bookingMsg.command_type=2;
+        }else if(strcmp(command,"bookEssentials")==0){
+            bookingMsg.command_type=3;
+        }else{
+            printf("unvalid command: %s\n",command);
+            break;
+        }
 
+        char *tokens[10];
+        char *token;
+        int count = 0;
+        token = strtok(args," ");
+        while (token!=NULL && count<10) {
+            tokens[count] = token;
+            token = strtok(NULL," ");
+            count++;
+        }
+        if (bookingMsg.command_type==0 || bookingMsg.command_type==1 ||
+            bookingMsg.command_type==2 || bookingMsg.command_type==3) {
+            if (count >= 4) {
+                if (count > 6 && bookingMsg.command_type==0) {//addparking request
+                    printf("addParking only accept no more than 2 facilities. count: %d\n",count-4);
+                    break;
+                }
+                if (count != 6 && bookingMsg.command_type==1) {//addReservation request
+                    printf("Two facilities are required for addReservation. count: %d\n",count-4);
+                    break;
+                }
+                if (count > 7 && bookingMsg.command_type==2) {//addEvent request
+                    printf("addEvent only accept no more than 3 facilities. count: %d\n",count-4);
+                    break;
+                }
+                if (count != 5 && bookingMsg.command_type==3) {//bookEssentials request
+                    printf("bookEssentials only accept 1 facilities. count: %d\n",count-4);
+                    break;
+                }
+                char *temp = strchr(tokens[0],'-');
+                if (temp!=NULL) {
+                    temp= temp+1;
+                    strcpy(bookingMsg.member_name,temp);
+                    strcpy(bookingMsg.booking_date,tokens[1]);
+                    strcpy(bookingMsg.booking_time,tokens[2]);
+
+
+                    char temp2[50];
+                    strcpy(temp2,tokens[1]);
+                    size_t temp_size = strlen(temp2);
+                    temp2[temp_size] = ' ';
+                    temp2[temp_size+1] = '\0';
+                    strcat(temp2, tokens[2]);//concat date and time
+                    struct tm tm;
+                    memset(&tm, 0, sizeof(tm));
+                    strptime(temp2, "%Y-%m-%d %H:%M", &tm);//string to timestamp
+                    bookingMsg.date = mktime(&tm);
+
+
+                    if (bookingMsg.command_type==3) {
+                        bookingMsg.parking_need=false;
+                    }else {
+                        bookingMsg.parking_need=true;
+                    }
+
+                }else {
+                    printf("unvalid member.\n");
+                    break;
+                }
+
+                if (count == 4) {
+
+                    char *temp = strchr(tokens[3],';');
+                    if (temp!=NULL) {
+                        *temp = '\0';//delete ;
+                        bookingMsg.book_time_duration = atof(tokens[3]);
+                    }else {
+                        printf("unvalid args.\n");
+                        break;
+                    }
+                }else {
+                    bookingMsg.book_time_duration = atof(tokens[3]);//convert char to float
+                }
+
+            }else{
+                printf("unvalid args: %s\n",args);
+                break;
+            }
+            if (count>4) {
+                for (int i = 4; i < count; i++) {
+                    char *temp = strchr(tokens[i],';');
+                    if (temp!=NULL) {
+                        *temp = '\0';//delete ;
+                    }
+                    if (strcmp(tokens[i],"battery")==0) {
+                        bookingMsg.facilities[BATTERY] = 1;
+                        if (bookingMsg.command_type!=3) {//all command need a pair of item except essentialbook
+                            bookingMsg.facilities[CABLE] = 1;
+                        }
+                    }else if (strcmp(tokens[i],"cable")==0) {
+                        bookingMsg.facilities[CABLE] = 1;
+                        if (bookingMsg.command_type!=3) {
+                            bookingMsg.facilities[BATTERY] = 1;
+                        }
+                    }else if (strcmp(tokens[i],"locker")==0) {
+                        bookingMsg.facilities[LOCKER] = 1;
+                        if (bookingMsg.command_type!=3) {
+                            bookingMsg.facilities[UMBRELLA] = 1;
+                        }
+                    }else if (strcmp(tokens[i],"umbrella")==0) {
+                        bookingMsg.facilities[UMBRELLA] = 1;
+                        if (bookingMsg.command_type!=3) {
+                            bookingMsg.facilities[LOCKER] = 1;
+                        }
+                    }else if (strcmp(tokens[i],"inflation")==0) {
+                        bookingMsg.facilities[INFLATION] = 1;
+                        if (bookingMsg.command_type!=3) {
+                            bookingMsg.facilities[VALET] = 1;
+                        }
+                    }else if (strcmp(tokens[i],"valet")==0) {
+                        bookingMsg.facilities[VALET] = 1;
+                        if (bookingMsg.command_type!=3) {
+                            bookingMsg.facilities[INFLATION] = 1;
+                        }
+                    }
+
+                }
+            }//BATTERY=0,CABLE=1,LOCKER=2,UMBRELLA=3,INFLATION=4,VALET=5
+            printf("-> [PENDING]\n");
+
+            bookingMsgs[booking_count++] = bookingMsg; //store in booking array
+
+        }
+
+
+    }
+
+
+}
 void input_process(){
     char command[MAX_MSG];
     char args[MAX_MSG];
@@ -136,8 +305,11 @@ void input_process(){
         } else {
             args[0] = '\0';
         }
+        if (strcmp(command, "addBatch") == 0) {
+            add_batch(command, args);
+            continue;
+        }
 
-        
         //command handle
         if(strcmp(command,"addParking")==0){
             bookingMsg.command_type=0;
