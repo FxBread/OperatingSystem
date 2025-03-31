@@ -123,6 +123,11 @@ void add_batch(char *input_command,char *input_args) {
     char batch_args[MAX_MSG];
     strcpy(batch_command, input_command);
     strcpy(batch_args, input_args+1);
+    int str_len = strlen(batch_args);
+    if (str_len>0&&batch_args[str_len-1]==';') {
+        batch_args[str_len-1]='\0';
+    }
+
     FILE *batch_file = fopen(batch_args, "r");
     if (batch_file == NULL) {
         printf("Cannot open batch file: %s\n", batch_args);
@@ -318,13 +323,13 @@ void input_process(){
             bookingMsg.command_type=1;
         }else if(strcmp(command,"addEvent")==0){
             bookingMsg.command_type=2;
-        }else if(strcmp(command,"bookEssentials")==0){
+        }else if(strcmp(command,"bookEssentials")==0||strcmp(command,"bookEssential")==0){
             bookingMsg.command_type=3;
         }else if(strcmp(command,"addBatch")==0){
             bookingMsg.command_type=4;
-        }else if(strcmp(command,"printBookings")==0){
+        }else if(strcmp(command,"printBookings")==0||strcmp(command,"printBooking")==0){
             bookingMsg.command_type=5;
-        }else if(strcmp(command,"endProgram")==0){
+        }else if(strcmp(command,"endProgram")==0||strcmp(command,"endProgram;")==0){
             bookingMsg.command_type=-1;
             exit_program();
             break;
@@ -468,13 +473,14 @@ void input_process(){
                 printf("unvalid args.\n");
                 break;
             }
-            if (strcmp(temp,"-fcfs")==0) {
+            if (strcmp(temp,"-fcfs")==0||strcmp(temp,"-fcfs;")==0) {
                 status = FCFS;
-            }else if (strcmp(temp,"-prio")==0) {
+            }else if (strcmp(temp,"-prio")==0||strcmp(temp,"-prio;")==0) {
                 status = PRIO;
-            }else if (strcmp(temp,"-opti")==0) {
+            }else if (strcmp(temp,"-opti")==0||strcmp(temp,"-opti;")==0) {
                 status = OPTI;
-            }else if (strcmp(temp,"-ALL")==0) {
+            }else if (strcmp(temp,"-ALL")==0||strcmp(temp,"-ALL;")==0
+                ||strcmp(temp,"-all")==0||strcmp(temp,"-all;")==0) {
                 status = ALL;
             }else {
                 printf("unvalid args.\n");
