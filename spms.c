@@ -18,6 +18,10 @@
 #define FAIL 0
 #define SUCCESS 1
 
+/*
+ * Author: Your Name
+ */
+
 typedef struct {
     int command_type;
     char input_args[MAX_MSG];
@@ -112,7 +116,8 @@ int convert_date_to_end_hour_index(int start_hour_index,float book_time_duration
     return hour_index;
 }
 void exit_program() {
-    for (int i = 0; i < 4; i++) {
+    int i;
+    for (i = 0; i < 4; i++) {
         if (child_pids[i] > 0) {
             kill(child_pids[i], SIGTERM);
         }
@@ -243,7 +248,8 @@ void add_batch(char *input_command,char *input_args) {
                 break;
             }
             if (count>4) {
-                for (int i = 4; i < count; i++) {
+                int i;
+                for (i = 4; i < count; i++) {
                     char *temp = strchr(tokens[i],';');
                     if (temp!=NULL) {
                         *temp = '\0';//delete ;
@@ -417,7 +423,8 @@ void input_process(){
                 break;
             }
             if (count>4) {
-                for (int i = 4; i < count; i++) {
+                int i;
+                for (i = 4; i < count; i++) {
                     char *temp = strchr(tokens[i],';');
                     if (temp!=NULL) {
                         *temp = '\0';//delete ;
@@ -501,13 +508,14 @@ void input_process(){
 
 }
 void init_pipe_value(DistributeItem distributeItems[][24]) {
-    for (int i=0;i<7;i++) {
-        for (int j=0;j<24;j++) {
-            for (int k=0;k<MAX_PARKING_SPACE;k++) {
+    int i,j,k,l,m;
+    for (i=0;i<7;i++) {
+        for (j=0;j<24;j++) {
+            for (k=0;k<MAX_PARKING_SPACE;k++) {
                 distributeItems[i][j].parking_space[k] = UNUSED;
             }
-            for (int l=0;l<6;l++) {
-                for (int m=0;m<3;m++) {
+            for (l=0;l<6;l++) {
+                for (m=0;m<3;m++) {
                     distributeItems[i][j].facilities[l][m] = UNUSED;
                 }
             }
@@ -516,10 +524,10 @@ void init_pipe_value(DistributeItem distributeItems[][24]) {
 }
 
 int check_parking_valid(DistributeItem *distribute_item,int start_hour_index,int end_hour_index ) {
-
-    for (int i = 0;i<MAX_PARKING_SPACE;i++) {
+    int i,j;
+    for (i = 0;i<MAX_PARKING_SPACE;i++) {
         bool parking_valid = true;
-        for (int j = start_hour_index;j<end_hour_index;j++) {
+        for (j = start_hour_index;j<end_hour_index;j++) {
             if (distribute_item[j].parking_space[i]==USED) {
                 parking_valid = false;
                 break;
@@ -532,7 +540,8 @@ int check_parking_valid(DistributeItem *distribute_item,int start_hour_index,int
     return NO_PARKING_SPACE;
 }
 bool check_facilities_need(int *facilities) {
-    for (int i = 0;i<6;i++) {
+    int i;
+    for (i = 0;i<6;i++) {
         if (facilities[i]==1) {
             return true;
         }
@@ -543,21 +552,22 @@ bool check_facility_valid(int *facilities,DistributeItem *distribute_item,int st
     bool facility_valid = false;
     int count = 0;
     int facilities_list[6];
-    for (int i = 0;i<6;i++) {
+    int i,j,k;
+    for (i = 0;i<6;i++) {
         facilities_list[i] = 0;
     }
     bool next = true;
-    for (int i = 0;i<6;i++) {
+    for (i = 0;i<6;i++) {
         if (facilities[i]==1) {
             facilities_list[count++] = i;
         }
     }
-    for (int i = 0;i<count;i++) {
+    for (i = 0;i<count;i++) {
         bool facility_available = false;
         int facility_idx = facilities_list[i];
-        for (int j = 0;j<3;j++) {
+        for (j = 0;j<3;j++) {
             bool slot_available = true;
-            for (int k = start_hour_index;k<end_hour_index;k++) {
+            for (k = start_hour_index;k<end_hour_index;k++) {
                 if (distribute_item[k].facilities[facility_idx][j]==USED) {
                     slot_available = false;
                     break;
@@ -576,23 +586,25 @@ bool check_facility_valid(int *facilities,DistributeItem *distribute_item,int st
 
 }
 void set_parking_space_used(DistributeItem *distribute_item,int parking_index,int start_hour_index,int end_hour_index) {
-    for (int i = start_hour_index;i<end_hour_index;i++) {
+    int i;
+    for (i = start_hour_index;i<end_hour_index;i++) {
         distribute_item[i].parking_space[parking_index] = USED;
     }
 }
 void set_facility_used(int *facilities,DistributeItem *distribute_item,int start_hour_index,int end_hour_index) {
-    for (int j = 0;j<6;j++) {
+    int j,k,i;
+    for (j = 0;j<6;j++) {
         if (facilities[j]==1) {
-            for ( int k = 0;k<3;k++) {
+            for ( k = 0;k<3;k++) {
                 bool position_available = true;
-                for (int i = start_hour_index;i<end_hour_index;i++) {
+                for (i = start_hour_index;i<end_hour_index;i++) {
                     if (distribute_item[i].facilities[j][k] == USED) {
                         position_available = false;
                         break;
                     }
                 }
                 if (position_available) {
-                    for (int i = start_hour_index; i < end_hour_index; i++) {
+                    for (i = start_hour_index; i < end_hour_index; i++) {
                         distribute_item[i].facilities[j][k] = USED;
                     }
                     return;
@@ -609,7 +621,8 @@ void fcfs_process() {
         read(scheduler_to_fcfs[PIPE_READ],&bookingMsg_for_pipe,sizeof(bookingMsg_for_pipe));
         BookingMsg *recbookingMsgs = bookingMsg_for_pipe.bookingMsgs; //store all booking value
         booking_count = bookingMsg_for_pipe.booking_count;
-        for (int i = 0;i<booking_count;i++) {//calculate booking duration time
+        int i;
+        for (i = 0;i<booking_count;i++) {//calculate booking duration time
             int day_index = convert_date_to_day_index(recbookingMsgs[i].date);//sun-sat 0-6day
             int start_hour_index = convert_date_to_start_hour_index(recbookingMsgs[i].booking_time);//time slot index 0-23
             int end_hour_index = convert_date_to_end_hour_index(start_hour_index,recbookingMsgs[i].book_time_duration);
@@ -654,8 +667,9 @@ void prio_process() {
         BookingMsg *recbookingMsgs = bookingMsg_for_pipe.bookingMsgs; //store all booking value
         booking_count = bookingMsg_for_pipe.booking_count;
         int prio_order[] = {2,1,0,3};// event->reservation->parking->essential
-        for (int order = 0;order<4;order++) {
-            for (int i = 0;i<booking_count;i++) {//calculate booking duration time
+        int order,i;
+        for (order = 0;order<4;order++) {
+            for (i = 0;i<booking_count;i++) {//calculate booking duration time
                 if (recbookingMsgs[i].command_type == prio_order[order]) { //Handle booking in order
                     int day_index = convert_date_to_day_index(recbookingMsgs[i].date);//sun-sat 0-6day
                     int start_hour_index = convert_date_to_start_hour_index(recbookingMsgs[i].booking_time);//time slot index 0-23
@@ -711,7 +725,7 @@ void opti_process() {
                 }
             }
         }
-        for (int i = 0;i<booking_count;i++) {//calculate booking duration time
+        for (i = 0;i<booking_count;i++) {//calculate booking duration time
             int day_index = convert_date_to_day_index(recbookingMsgs[i].date);//sun-sat 0-6day
             int start_hour_index = convert_date_to_start_hour_index(recbookingMsgs[i].booking_time);//time slot index 0-23
             int end_hour_index = convert_date_to_end_hour_index(start_hour_index,recbookingMsgs[i].book_time_duration);
@@ -831,10 +845,11 @@ void print_process() {
             int total_number_rejected = 0;
             float total_parking_time_slot = 0.0; //24x7 = 168
             float total_facility_time_slot[6];  //one facility time slot 24x7x3 = 504
-            for (int i = 0; i < 6; i++) {
+            int i,j;
+            for (i = 0; i < 6; i++) {
                 total_facility_time_slot[i] = 0.0;
             }
-            for (int i = 0; i < booking_count; i++) {
+            for (i = 0; i < booking_count; i++) {
                 if (recbookingMsgs[i].status==SUCCESS) {
                     total_number_assigned++;
                     total_parking_time_slot = recbookingMsgs[i].book_time_duration+total_parking_time_slot;
@@ -842,16 +857,16 @@ void print_process() {
                     total_number_rejected++;
                 }
             }
-            for (int i = 0; i < booking_count; i++) {
+            for (i = 0; i < booking_count; i++) {
                 if (recbookingMsgs[i].status==SUCCESS) {
-                    for (int j = 0; j < 6; j++) {
+                    for (j = 0; j < 6; j++) {
                         if (recbookingMsgs[i].facilities[j]==1) {
                             total_facility_time_slot[j] = total_facility_time_slot[j]+recbookingMsgs[i].book_time_duration;
                         }
                     }
                 }
             }
-            for (int i = 0; i < 6; i++) {
+            for (i = 0; i < 6; i++) {
                 if (total_facility_time_slot[i]!=0) {
                     total_facility_time_slot[i] = total_facility_time_slot[i]/504.0;
                 }
@@ -877,13 +892,13 @@ void print_process() {
         //parking booking -accepted
         if (strcmp(command_type,"ALL")!=0) {
             printf("*** Parking Booking - ACCEPTED / %s ***\n", command_type);
-
-            for (int member = 0; member<5;member++) {
+            int member,i,i2;
+            for (member = 0; member<5;member++) {
                 printf("%s has the following bookings:\n", member_names[member]);
                 printf("Date         Start     End     Type       Device\n");
                 printf("===========================================================================\n");
 
-                for (int i = 0; i < booking_count; i++) {
+                for (i = 0; i < booking_count; i++) {
                     if (strcmp(recbookingMsgs[i].member_name, member_names[member]) != 0) {continue;}
                     if (recbookingMsgs[i].status==FAIL) {continue;}
                     int start_time = convert_date_to_start_hour_index(recbookingMsgs[i].booking_time);
@@ -914,7 +929,7 @@ void print_process() {
                         "INFLATION",
                         "VALET"
                     };
-                    for (int i2 = 0; i2 < 6; i2++) {
+                    for (i2 = 0; i2 < 6; i2++) {
                         if (recbookingMsgs[i].facilities[i2]==1) {
                             facilities_valid = true;
                             printf("%-20s \n                                            ", facility_names[i2]);
@@ -931,11 +946,11 @@ void print_process() {
 
             //parking booking -REJECTED
             printf("*** Parking Booking - REJECTED / %s ***\n", command_type);
-            for (int member = 0; member<5;member++) {
+            for (member = 0; member<5;member++) {
                 printf("%s has the following bookings:\n\n", member_names[member]);
                 printf("Date         Start     End     Type       Device\n");
                 printf("===========================================================================\n");
-                for (int i = 0; i < booking_count; i++) {
+                for (i = 0; i < booking_count; i++) {
                     if (strcmp(recbookingMsgs[i].member_name, member_names[member]) != 0) {continue;}
                     if (recbookingMsgs[i].status==SUCCESS) {continue;}
                     int start_time = convert_date_to_start_hour_index(recbookingMsgs[i].booking_time);
@@ -965,7 +980,7 @@ void print_process() {
                         "INFLATION",
                         "VALET"
                     };
-                    for (int i2 = 0; i2 < 6; i2++) {
+                    for (i2 = 0; i2 < 6; i2++) {
                         if (recbookingMsgs[i].facilities[i2]==1) {
                             facilities_valid = true;
                             printf("%-20s \n                                            ", facility_names[i2]);
