@@ -607,7 +607,7 @@ void set_facility_used(int *facilities,DistributeItem *distribute_item,int start
                     for (i = start_hour_index; i < end_hour_index; i++) {
                         distribute_item[i].facilities[j][k] = USED;
                     }
-                    return;
+                    break;
                 }
             }
         }
